@@ -143,9 +143,123 @@ std::optional<Halfedge_Mesh::EdgeRef> Halfedge_Mesh::flip_edge(Halfedge_Mesh::Ed
     the edge that was split, rather than the new edges.
 */
 std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::split_edge(Halfedge_Mesh::EdgeRef e) {
+    // lol look at your goodnotes for the reasoning...hard to grep looking at
+    // code, but convention is to opt for lowest number.
+    VertexRef v1 = e->halfedge()->vertex();
+    VertexRef v2 = e->halfedge()->twin()->vertex();
+    VertexRef v3 = e->halfedge()->next()->next()->vertex();
+    VertexRef v4 = e->halfedge()->twin()->next()->next()->vertex();
+    VertexRef v5 = new_vertex();
 
-    (void)e;
-    return std::nullopt;
+    HalfedgeRef h1 = e->halfedge();
+    HalfedgeRef h2 = h1->next();
+    HalfedgeRef h3 = h2->next();
+    HalfedgeRef h4 = h1->twin();
+    HalfedgeRef h5 = h4->next();
+    HalfedgeRef h6 = h5->next();
+    HalfedgeRef h7 = new_halfedge();
+    HalfedgeRef h8 = new_halfedge();
+    HalfedgeRef h9 = new_halfedge();
+    HalfedgeRef h10 = new_halfedge();
+    HalfedgeRef h11 = new_halfedge();
+    HalfedgeRef h12 = new_halfedge();
+
+    EdgeRef e1 = e;
+    EdgeRef e2 = new_edge();
+    EdgeRef e3 = new_edge();
+    EdgeRef e4 = new_edge();
+
+    FaceRef f1 = h1->face();
+    FaceRef f2 = h4->face();
+    FaceRef f3 = new_face();
+    FaceRef f4 = new_face();
+
+    v5->pos = e->center();
+    v5->halfedge() = h12;
+
+    h1->vertex() = v1;
+    h1->edge() = e1;
+    h1->twin() = h12;
+    h1->next() = h7;
+    h1->face() = f1;
+
+    h2->vertex() = v2;
+    h2->edge() = h2->edge();
+    h2->twin() = h2->twin();
+    h2->next() = h8;
+    h2->face() = f2;
+
+    h3->vertex() = v3;
+    h3->edge() = h3->edge();
+    h3->twin() = h3->twin();
+    h3->next() = h1;
+    h3->face() = f1;
+
+    h4->vertex() = v2;
+    h4->edge() = e2;
+    h4->twin() = h9;
+    h4->next() = h10;
+    h4->face() = f3;
+
+    h5->vertex() = v1;
+    h5->edge() = h5->edge();
+    h5->twin() = h5->twin();
+    h5->next() = h11;
+    h5->face() = f4;
+
+    h6->vertex() = v4;
+    h6->edge() = h6->edge();
+    h6->twin() = h6->twin();
+    h6->next() = h4;
+    h6->face() = f3;
+
+    h7->vertex() = v5;
+    h7->edge() = e3;
+    h7->twin() = h8;
+    h7->next() = h3;
+    h7->face() = f1;
+
+    h8->vertex() = v3;
+    h8->edge() = e3;
+    h8->twin() = h7;
+    h8->next() = h9;
+    h8->face() = f2;
+
+    h9->vertex() = v5;
+    h9->edge() = e2;
+    h9->twin() = h4;
+    h9->next() = h2;
+    h9->face() = f2;
+
+    h10->vertex() = v5;
+    h10->edge() = e4;
+    h10->twin() = h11;
+    h10->next() = h6;
+    h10->face() = f3;
+
+    h11->vertex() = v4;
+    h11->edge() = e4;
+    h11->twin() = h10;
+    h11->next() = h12;
+    h11->face() = f4;
+
+    h12->vertex() = v5;
+    h12->edge() = e1;
+    h12->twin() = h1;
+    h12->next() = h5;
+    h12->face() = f4;
+
+    e1->halfedge() = h1;
+    e2->halfedge() = h4;
+    e3->halfedge() = h7;
+    e4->halfedge() = h10;
+
+    f1->halfedge() = h1;
+    f2->halfedge() = h2;
+    f3->halfedge() = h4;
+    f4->halfedge() = h5;
+
+    return v5;
 }
 
 /* Note on the beveling process:
