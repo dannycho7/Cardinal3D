@@ -565,7 +565,10 @@ void Halfedge_Mesh::bevel_face_positions(const std::vector<Vec3>& start_position
         h = h->next();
     } while(h != face->halfedge());
 
-    std::cout << normal_offset << tangent_offset << std::endl;
+    // clamping
+    if (tangent_offset > 1.5 || tangent_offset < -1.0) {
+        return;
+    }
 
     for(size_t i = 0; i < new_halfedges.size(); i++) {
         Vec3 start = start_positions.at(i);
