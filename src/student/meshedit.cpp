@@ -132,9 +132,51 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::collapse_face(Halfedge_Me
     flipped edge.
 */
 std::optional<Halfedge_Mesh::EdgeRef> Halfedge_Mesh::flip_edge(Halfedge_Mesh::EdgeRef e) {
+    if (e->on_boundary()) {
+        return std::nullopt;
+    }
 
-    (void)e;
-    return std::nullopt;
+    HalfedgeRef h0 = e->halfedge();
+    HalfedgeRef h1 = e->halfedge()->twin();
+    HalfedgeRef h2 = h0->next();
+    HalfedgeRef h3 = h1->next();
+    HalfedgeRef h4 = h0;
+    do {
+        h4 = h4->next();
+    } while (h4->next() != h0);
+    HalfedgeRef h5 = h1;
+    do {
+        h5 = h5->next();
+    } while (h5->next() != h1);
+    HalfedgeRef h6 = h2->next();
+    HalfedgeRef h7 = h3->next();
+
+    VertexRef v0 = h0->next()->vertex();
+    VertexRef v1 = h1->next()->vertex();
+    VertexRef v2 = h0->next()->next()->vertex();
+    VertexRef v3 = h1->next()->next()->vertex();
+
+    FaceRef f0 = h0->face();
+    FaceRef f1 = h1->face();
+
+    h0->vertex() = v3;
+    h0->next() = h6;
+    h1->vertex() = v2;
+    h1->next() = h7;
+    h2->next() = h1;
+    h2->face() = f1;
+    h3->next() = h0;
+    h3->face() = f0;
+    h4->next() = h3;
+    h5->next() = h2;
+    
+    v0->halfedge() = h2;
+    v1->halfedge() = h3;
+
+    f0->halfedge() = h0;
+    f1->halfedge() = h1;
+
+    return e;
 }
 
 /*
