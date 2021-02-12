@@ -330,12 +330,96 @@ std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::bevel_edge(Halfedge_Mesh::E
     implement!)
 */
 std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::bevel_face(Halfedge_Mesh::FaceRef f) {
-
     // Reminder: You should set the positions of new vertices (v->pos) to be exactly
     // the same as wherever they "started from."
+    {
+        // Create vertex copies
+        std::vector<std::pair<VertexRef, VertexRef>> vertices;
+        HalfedgeRef h_start = f->halfedge();
+        HalfedgeRef h = h_start;
+        do {
+            VertexRef v_old = h->vertex();
+            VertexRef v = new_vertex();
+            v->pos = v_old->pos;
+            vertices.push_back({v_old, v});
+            h = h->next();
+        } while (h != h_start);
+        // a bit of a hack but avoids having to think of this as a circular
+        // list.
+        vertices.push_back(vertices.at(0));
 
-    (void)f;
-    return std::nullopt;
+
+        int num_edges = vertices.size() - 1;
+        std::vector<std::vector<HalfedgeRef>> side_face_hs(num_edges);
+        std::vector<HalfedgeRef> top_face_hs;
+        int vi = 0;
+        do {
+            auto [v2, v0] = vertices.at(vi);
+            auto [v3_, v1] = vertices.at(vi + 1);
+            
+            EdgeRef e = new_edge();
+            HalfedgeRef h0 = new_halfedge();
+            HalfedgeRef h1 = new_halfedge();
+
+            v0->halfedge() = h0;
+            f->halfedge() = h0;
+            e->halfedge() = h0;
+            
+            h0->twin() = h1;
+            h0->edge() = e;
+            h0->vertex() = v0;
+            h0->face() = f;
+            h1->twin() = h0;
+            h1->edge() = e;
+            h1->vertex() = v1;
+            h1->face() = f;
+
+            EdgeRef e_side = new_edge();
+            HalfedgeRef h0_side = new_halfedge();
+            HalfedgeRef h1_side = new_halfedge();
+
+            e_side->halfedge() = h0_side;
+            h0_side->twin() = h1_side;
+            h0_side->edge() = e_side;
+            h0_side->vertex() = v0;
+            h1_side->twin() = h0_side;
+            h1_side->edge() = e_side;
+            h1_side->vertex() = v2;
+
+            top_face_hs.push_back(h0);
+            side_face_hs.at(vi).push_back(h);
+            side_face_hs.at(vi).push_back(h1);
+            side_face_hs.at(vi).push_back(h0_side);
+            int prev_vi = vi == 0 ? side_face_hs.size() - 1 : vi - 1;
+            side_face_hs.at(prev_vi).push_back(h1_side);
+
+            ++vi;
+            h = h->next();
+        } while (h != h_start);
+
+        top_face_hs.push_back(top_face_hs.at(0));
+        for (size_t ti = 0; ti < top_face_hs.size() - 1; ++ti) {
+            std::cout << top_face_hs.at(ti)->vertex()->pos << std::endl;
+            top_face_hs.at(ti)->next() = top_face_hs.at(ti + 1);
+        }
+
+        for (const auto& face_hs : side_face_hs) {
+            assert(face_hs.size() == 4);
+            FaceRef f_side = new_face();
+            for (HalfedgeRef h : face_hs) {
+                h->face() = f_side;
+                f_side->halfedge() = h;
+                for (HalfedgeRef next : face_hs) {
+                    if (next->vertex() == h->twin()->vertex()) {
+                        h->next() = next;
+                    }
+                }
+            }
+        }
+
+    }
+
+    return f;
 }
 
 /*
@@ -433,11 +517,18 @@ void Halfedge_Mesh::bevel_face_positions(const std::vector<Vec3>& start_position
         h = h->next();
     } while(h != face->halfedge());
 
-    (void)new_halfedges;
-    (void)start_positions;
-    (void)face;
-    (void)tangent_offset;
-    (void)normal_offset;
+    std::cout << normal_offset << tangent_offset << std::endl;
+
+    for(size_t i = 0; i < new_halfedges.size(); i++) {
+        Vec3 start = start_positions.at(i);
+        Vec3 normal_delta = face->normal() * normal_offset;
+        Vec3 tangent = start - new_halfedges.at(i)->twin()->vertex()->pos;
+        Vec3 tangent_delta = tangent * tangent_offset;
+        Vec3 new_pos = start + normal_delta + tangent_delta;
+        if (new_pos.valid()) {
+            new_halfedges.at(i)->vertex()->pos = new_pos;
+        }
+    }
 }
 
 /*
