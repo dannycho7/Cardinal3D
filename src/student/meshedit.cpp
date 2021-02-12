@@ -143,6 +143,12 @@ std::optional<Halfedge_Mesh::EdgeRef> Halfedge_Mesh::flip_edge(Halfedge_Mesh::Ed
     the edge that was split, rather than the new edges.
 */
 std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::split_edge(Halfedge_Mesh::EdgeRef e) {
+    // if we're not dealing with triangles, don't do this operation
+    if (e->halfedge()->next()->next()->next() != e->halfedge() ||
+        e->halfedge()->twin()->next()->next()->next() != e->halfedge()->twin()) {
+        return std::nullopt;
+    }
+
     // lol look at your goodnotes for the reasoning...hard to grep looking at
     // code, but convention is to opt for lowest number.
     VertexRef v1 = e->halfedge()->vertex();
