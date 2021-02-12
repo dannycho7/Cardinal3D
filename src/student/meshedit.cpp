@@ -5,6 +5,7 @@
 
 #include "../geometry/halfedge.h"
 #include "debug.h"
+#include <iostream>
 
 /* Note on local operation return types:
 
@@ -55,9 +56,65 @@ std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::erase_edge(Halfedge_Mesh::E
     the new vertex created by the collapse.
 */
 std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::collapse_edge(Halfedge_Mesh::EdgeRef e) {
+    VertexRef v = new_vertex();
+    v->halfedge() = e->halfedge()->next();
+    v->pos = e->center();
 
-    (void)e;
-    return std::nullopt;
+    auto process_outbound_edges = [=](HalfedgeRef h) {
+        HalfedgeRef h_start = h;
+        do {
+            h = h->twin()->next();
+            h->vertex() = v;
+        } while (h->twin()->next() != h_start);
+
+        h = h_start;
+        do {
+            h = h->twin()->next();
+            assert(h->vertex() != h_start->vertex());
+        } while (h->twin()->next() != h_start);
+
+        h = h_start;
+        do {
+            HalfedgeRef next = h->next();
+            // if this halfedge's next was h_start, replace with h_start's next
+            if (next== h_start) {
+                h->next() = h_start->next();
+                break;
+            }
+            h = next;
+        } while (h != h_start);
+
+        // give face new halfedges if it was the one we're planning to delete
+        if (h_start->face()->halfedge() == h_start) {
+            std::cout << "Giving face new halfedge" << std::endl;
+            h_start->face()->halfedge() = h_start->next();
+        }
+        // if face now has only 2 edges remove face
+        HalfedgeRef h1 = h_start->face()->halfedge();
+        if (h1 == h1->next()->next()) {
+            h1->vertex()->halfedge() = h1->next()->twin();
+            h1->next()->vertex()->halfedge() = h1->twin();
+            h1->twin()->twin() = h1->next()->twin();
+            h1->next()->twin()->twin() = h1->twin();
+            h1->twin()->edge() = h1->next()->edge();
+            h1->twin()->edge()->halfedge() = h1->twin();
+
+            erase(h1->face());
+            erase(h1->edge());
+            erase(h1->next());
+            erase(h1);
+        }
+
+        // delete halfedge
+        erase(h_start->vertex());
+        erase(h_start);
+    };
+
+    process_outbound_edges(e->halfedge());
+    process_outbound_edges(e->halfedge()->twin());
+    erase(e);
+
+    return v;
 }
 
 /*
