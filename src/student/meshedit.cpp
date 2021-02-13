@@ -693,13 +693,21 @@ void Halfedge_Mesh::linear_subdivide_positions() {
 
     // For each vertex, assign Vertex::new_pos to
     // its original position, Vertex::pos.
-
+    for (auto& vertex : vertices) {
+        vertex.new_pos = vertex.pos;
+    }
     // For each edge, assign the midpoint of the two original
     // positions to Edge::new_pos.
+    for (auto& edge : edges) {
+        edge.new_pos = edge.center();
+    }
 
     // For each face, assign the centroid (i.e., arithmetic mean)
     // of the original vertex positions to Face::new_pos. Note
     // that in general, NOT all faces will be triangles!
+    for (auto& face : faces) {
+        face.new_pos = face.center();
+    }
 }
 
 /*
