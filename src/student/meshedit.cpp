@@ -2,10 +2,12 @@
 #include <queue>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "../geometry/halfedge.h"
 #include "debug.h"
 #include <iostream>
+#include <sstream>
 
 /* Note on local operation return types:
 
@@ -56,22 +58,61 @@ std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::erase_edge(Halfedge_Mesh::E
     the new vertex created by the collapse.
 */
 std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::collapse_edge(Halfedge_Mesh::EdgeRef e) {
+    // don't collapse edges that will result with multiple edges with the same
+    // vertices and no way of merging (super edge case).
+    auto can_collapse_edge = [=](EdgeRef e) {
+        // A line not connected to anything can't be collapsed
+        if (e->halfedge()->twin() == e->halfedge()->next()) {
+            return false;
+        }
+        std::unordered_set<VertexRef> seen;
+        std::unordered_set<FaceRef> whitelisted_faces;
+        whitelisted_faces.insert(e->halfedge()->face());
+        whitelisted_faces.insert(e->halfedge()->twin()->face());
+
+        std::vector<HalfedgeRef> hs{e->halfedge(), e->halfedge()->twin()};
+        for (HalfedgeRef h : hs) {
+            HalfedgeRef h_start =  h;
+            do {
+                VertexRef other = h->twin()->vertex();
+                assert(h->vertex() == h_start->vertex());
+                FaceRef f1 = h->face();
+                FaceRef f2 = h->twin()->face();
+                if (seen.find(other) != seen.end()
+                    && whitelisted_faces.find(f1) == whitelisted_faces.end()
+                    && whitelisted_faces.find(f2) == whitelisted_faces.end()) {
+                    return false;
+                }
+                seen.insert(other);
+                h = h->twin()->next();
+            } while (h != h_start);
+        }
+        return true;
+    };
+
+    if (!can_collapse_edge(e)) {
+        std::cout << "Can't collapse edge due to weird mesh result" << std::endl;
+        return std::nullopt;
+    }
+
     VertexRef v = new_vertex();
     v->halfedge() = e->halfedge()->next();
     v->pos = e->center();
 
     auto process_outbound_edges = [=](HalfedgeRef h) {
         HalfedgeRef h_start = h;
-        do {
+        while (h->twin()->next() != h_start) {
+            // std::cout << h_start->id() << " " << h->id() << std::endl;
             h = h->twin()->next();
+            assert(h->vertex() == h_start->vertex());
             h->vertex() = v;
-        } while (h->twin()->next() != h_start);
+        }
 
         h = h_start;
-        do {
+        while (h->twin()->next() != h_start) {
             h = h->twin()->next();
             assert(h->vertex() != h_start->vertex());
-        } while (h->twin()->next() != h_start);
+        }
 
         h = h_start;
         do {
@@ -85,13 +126,11 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::collapse_edge(Halfedge_Me
         } while (h != h_start);
 
         // give face new halfedges if it was the one we're planning to delete
-        if (h_start->face()->halfedge() == h_start) {
-            std::cout << "Giving face new halfedge" << std::endl;
-            h_start->face()->halfedge() = h_start->next();
-        }
+        h_start->face()->halfedge() = h_start->next();
+
         // if face now has only 2 edges remove face
-        HalfedgeRef h1 = h_start->face()->halfedge();
-        if (h1 == h1->next()->next()) {
+        HalfedgeRef h1 = h_start->next();
+        if (h1 == h1->next()->next() && h1->edge() != h1->next()->edge()) {
             h1->vertex()->halfedge() = h1->next()->twin();
             h1->next()->vertex()->halfedge() = h1->twin();
             h1->twin()->twin() = h1->next()->twin();
@@ -99,6 +138,8 @@ std::optional<Halfedge_Mesh::VertexRef> Halfedge_Mesh::collapse_edge(Halfedge_Me
             h1->twin()->edge() = h1->next()->edge();
             h1->twin()->edge()->halfedge() = h1->twin();
 
+            // reassign v halfedge in case we just deleted it via merge
+            v->halfedge() = h1->next()->twin();
             erase(h1->face());
             erase(h1->edge());
             erase(h1->next());
@@ -447,7 +488,6 @@ std::optional<Halfedge_Mesh::FaceRef> Halfedge_Mesh::bevel_face(Halfedge_Mesh::F
 
         top_face_hs.push_back(top_face_hs.at(0));
         for (size_t ti = 0; ti < top_face_hs.size() - 1; ++ti) {
-            std::cout << top_face_hs.at(ti)->vertex()->pos << std::endl;
             top_face_hs.at(ti)->next() = top_face_hs.at(ti + 1);
         }
 
@@ -852,6 +892,25 @@ struct Edge_Record {
         //    Edge_Record::optimal.
         // -> Also store the cost associated with collapsing this edge in
         //    Edge_Record::cost.
+        Mat4 K = vertex_quadrics[e->halfedge()->vertex()] + vertex_quadrics[e->halfedge()->twin()->vertex()];
+        Mat4 A = Mat4::axes(K.cols[0].xyz(), K.cols[1].xyz(), K.cols[2].xyz());
+        Vec3 b = K[3].xyz() * -1;
+
+        Mat4 inverse = A.inverse();
+        bool invalid = !inverse.cols[0].valid() ||
+                        !inverse.cols[1].valid() ||
+                        !inverse.cols[2].valid() ||
+                        !inverse.cols[3].valid();
+        if (invalid) {
+            std::cout << "invalid inverse" << std::endl;
+            optimal = e->center();
+        } else {
+            optimal = e->center();
+            (void) b;
+            // optimal = inverse * b;
+        }
+        Vec4 x = Vec4{optimal, 1};
+        cost = dot(Vec4{dot(x, K.cols[0]), dot(x, K.cols[1]), dot(x, K.cols[2]), dot(x, K.cols[3])}, x);
     }
     Halfedge_Mesh::EdgeRef edge;
     Vec3 optimal;
@@ -979,5 +1038,95 @@ bool Halfedge_Mesh::simplify() {
     // but here simply calling collapse_edge() will not erase the elements.
     // You should use collapse_edge_erase() instead for the desired behavior.
 
-    return false;
+    for (FaceRef face = faces_begin(); face != faces_end(); ++face) {
+        Vec3 N = face->normal();
+        Vec3 p = face->center();
+        float d = dot(N, p) * -1;
+        Vec4 v(N, d);
+        face_quadrics[face] = outer(v, v);
+    }
+
+    for (VertexRef vertex = vertices_begin(); vertex != vertices_end(); ++vertex) {
+        Mat4 face_quadric_sum;
+        HalfedgeRef h_start = vertex->halfedge();
+        HalfedgeRef h = h_start;
+        do {
+            face_quadric_sum += face_quadrics[h->face()];
+            h = h->twin()->next();
+        } while (h != h_start);
+        vertex_quadrics[vertex] = face_quadric_sum;
+    }
+
+    std::vector<EdgeRef> concerns(1);
+    for (EdgeRef edge = edges_begin(); edge != edges_end(); ++edge) {
+        edge_records[edge] = {vertex_quadrics, edge};
+        edge_queue.insert(edge_records[edge]);
+    }
+
+    size_t num_deletions = (faces.size() / 4);
+    constexpr size_t min_faces = 1;
+    // the mesh is gone ...
+    if (num_deletions >= faces.size() - min_faces) {
+        return false;
+    }
+
+    auto get_touching_edges_to_vertex = [=](VertexRef v) {
+        std::unordered_set<EdgeRef> touching_edges;
+        HalfedgeRef h = v->halfedge();
+        HalfedgeRef h_start = h;
+        do {
+            touching_edges.insert(h->edge());
+            h = h->twin()->next();
+        } while (h != h_start);
+        return touching_edges;
+    };
+
+    // excludes the edge itself
+    auto get_touching_edges = [=](EdgeRef e) {
+        std::unordered_set<EdgeRef> touching_edges;
+        auto t1 = get_touching_edges_to_vertex(e->halfedge()->vertex());
+        touching_edges.insert(t1.begin(), t1.end());
+        auto t2 = get_touching_edges_to_vertex(e->halfedge()->twin()->vertex());
+        touching_edges.insert(t2.begin(), t2.end());
+        touching_edges.erase(e);
+        return touching_edges;
+    };
+
+    for (size_t iter = 0; iter < num_deletions; ++iter) {
+        Edge_Record er = edge_queue.top();
+        edge_queue.pop();
+        Mat4 q1 = vertex_quadrics[er.edge->halfedge()->vertex()];
+        Mat4 q2 = vertex_quadrics[er.edge->halfedge()->twin()->vertex()];
+        Mat4 quadric_new = q1 + q2;
+        vertex_quadrics.erase(er.edge->halfedge()->vertex());
+        vertex_quadrics.erase(er.edge->halfedge()->twin()->vertex());
+
+        auto touching_edges = get_touching_edges(er.edge);
+        for (EdgeRef edge : touching_edges) {
+            // don't want to add back an uncollapsable edge
+            if (edge_records.find(edge) != edge_records.end()) {
+                edge_queue.remove(edge_records[edge]);
+            }
+        }
+
+        auto v_or = collapse_edge_erase(er.edge);
+        if (v_or.has_value()) {
+            VertexRef v = v_or.value();
+            v->pos = er.optimal;
+            vertex_quadrics[v] = quadric_new;
+            touching_edges = get_touching_edges_to_vertex(v);
+        }
+
+        edge_records.erase(er.edge);
+        // Add back touching edges
+        for (EdgeRef edge : touching_edges) {
+            // only add back in records that haven't been before
+            if (edge_records.find(edge) != edge_records.end()) {
+                edge_records[edge] = {vertex_quadrics, edge};
+                edge_queue.insert(edge_records[edge]);
+            }
+        }
+    }
+
+    return true;
 }
