@@ -631,7 +631,6 @@ void Halfedge_Mesh::triangulate() {
         return;
     }
     auto last_face = faces.end();
-    --last_face;
 
     for (auto face = faces.begin(); face != last_face; ++face) {
         HalfedgeRef h_start = face->halfedge();
